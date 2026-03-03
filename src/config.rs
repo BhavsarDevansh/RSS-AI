@@ -182,15 +182,12 @@ impl Config {
 
     /// Validate the loaded configuration.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        // data_dir parent must exist (after tilde expansion)
+        // data_dir must be creatable: at least one ancestor must exist
         let data_path = expand_tilde(&self.service.data_dir);
-        if let Some(parent) = data_path.parent()
-            && !parent.as_os_str().is_empty()
-            && !parent.exists()
-        {
+        if data_path.is_absolute() && !data_path.ancestors().any(|a| a.exists()) {
             return Err(ConfigError::Validation(format!(
-                "data_dir parent does not exist: {}",
-                parent.display()
+                "no ancestor of data_dir exists: {}",
+                data_path.display()
             )));
         }
 
@@ -412,9 +409,16 @@ mod tests {
         move |key| map.get(key).map(|v| (*v).to_string())
     }
 
+    /// Return a config with data_dir set to /tmp so tests pass on any host.
+    fn test_config() -> Config {
+        let mut cfg = Config::default();
+        cfg.service.data_dir = "/tmp/rss-ai-test".to_string();
+        cfg
+    }
+
     #[test]
     fn default_config_validates() {
-        Config::default().validate().unwrap();
+        test_config().validate().unwrap();
     }
 
     #[test]
@@ -432,7 +436,7 @@ mod tests {
 
     #[test]
     fn bad_url_fails_validation() {
-        let mut cfg = Config::default();
+        let mut cfg = test_config();
         cfg.llm.api_base_url = "not a url".to_string();
         let err = cfg.validate().unwrap_err();
         assert!(
@@ -443,7 +447,7 @@ mod tests {
 
     #[test]
     fn bad_interval_fails_validation() {
-        let mut cfg = Config::default();
+        let mut cfg = test_config();
         cfg.polling.default_interval_minutes = 0;
         let err = cfg.validate().unwrap_err();
         assert!(matches!(err, ConfigError::Validation(ref msg) if msg.contains("interval")));
@@ -451,7 +455,7 @@ mod tests {
 
     #[test]
     fn bad_log_level_fails_validation() {
-        let mut cfg = Config::default();
+        let mut cfg = test_config();
         cfg.service.log_level = "verbose".to_string();
         let err = cfg.validate().unwrap_err();
         assert!(matches!(err, ConfigError::Validation(ref msg) if msg.contains("log_level")));
@@ -459,7 +463,7 @@ mod tests {
 
     #[test]
     fn bad_temperature_fails_validation() {
-        let mut cfg = Config::default();
+        let mut cfg = test_config();
         cfg.llm.temperature = 3.0;
         let err = cfg.validate().unwrap_err();
         assert!(matches!(err, ConfigError::Validation(ref msg) if msg.contains("temperature")));
@@ -510,7 +514,8 @@ log_level = "debug"
     #[test]
     fn default_template_roundtrips() {
         let template = Config::default_toml_with_comments();
-        let cfg: Config = toml::from_str(template).unwrap();
+        let mut cfg: Config = toml::from_str(template).unwrap();
+        cfg.service.data_dir = "/tmp/rss-ai-test".to_string();
         cfg.validate().unwrap();
     }
 }
