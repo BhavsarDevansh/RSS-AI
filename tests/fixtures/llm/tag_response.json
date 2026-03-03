@@ -1,0 +1,21 @@
+{
+  "id": "chatcmpl-test-tag-001",
+  "object": "chat.completion",
+  "created": 1704067200,
+  "model": "gpt-4o-mini",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "{\"tags\": [\"nato\", \"defense\", \"eastern-europe\", \"security\", \"military-spending\"]}"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 250,
+    "completion_tokens": 30,
+    "total_tokens": 280
+  }
+}

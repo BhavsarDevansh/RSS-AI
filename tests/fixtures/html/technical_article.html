@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SQLite Performance Tuning for Embedded Applications</title>
+</head>
+<body>
+  <article>
+    <h1>SQLite Performance Tuning for Embedded Applications</h1>
+    <p class="author">By Maria Silva | November 20, 2023</p>
+
+    <p>SQLite is remarkably fast out of the box, but careful tuning can yield significant improvements for embedded use cases. This guide covers the most impactful PRAGMA settings and schema design patterns.</p>
+
+    <h2>Essential PRAGMAs</h2>
+    <p>The following PRAGMAs should be set at connection time:</p>
+
+    <pre><code>PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA foreign_keys = ON;
+PRAGMA cache_size = -64000;  -- 64MB cache
+PRAGMA busy_timeout = 5000;</code></pre>
+
+    <h2>Schema Design</h2>
+    <p>Proper indexing is critical. Consider this schema for an article table:</p>
+
+    <pre><code>CREATE TABLE articles (
+    id INTEGER PRIMARY KEY,
+    url TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    published_at DATETIME,
+    content TEXT
+);
+
+CREATE INDEX idx_articles_published
+    ON articles(published_at DESC);</code></pre>
+
+    <h2>Benchmarks</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Configuration</th>
+          <th>Inserts/sec</th>
+          <th>Reads/sec</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Default</td>
+          <td>1,200</td>
+          <td>45,000</td>
+        </tr>
+        <tr>
+          <td>WAL + Normal sync</td>
+          <td>8,500</td>
+          <td>48,000</td>
+        </tr>
+        <tr>
+          <td>WAL + 64MB cache</td>
+          <td>8,500</td>
+          <td>62,000</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>Conclusion</h2>
+    <p>With minimal configuration, SQLite can handle tens of thousands of operations per second, making it an excellent choice for applications like RSS readers that need fast local storage.</p>
+  </article>
+</body>
+</html>

@@ -24,4 +24,4 @@ debug
 *.db
 *.db-journal
 data/
-.sqlx/
+# .sqlx/ is committed for offline mode in CI

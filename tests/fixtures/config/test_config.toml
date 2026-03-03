@@ -1,0 +1,29 @@
+# Test configuration for RSS-AI
+# Uses in-memory database and localhost mock servers
+
+[database]
+url = "sqlite::memory:"
+
+[http]
+host = "127.0.0.1"
+port = 0  # OS-assigned port
+
+[feeds]
+poll_interval_secs = 60
+request_timeout_secs = 10
+max_concurrent_fetches = 2
+
+[llm]
+api_base = "http://localhost:0/v1"
+api_key = "test-key-not-real"
+model = "gpt-4o-mini"
+embedding_model = "text-embedding-3-small"
+embedding_dimensions = 8
+
+[search]
+index_path = ":memory:"
+
+[vector]
+dimensions = 8
+ef_construction = 16
+max_connections = 8

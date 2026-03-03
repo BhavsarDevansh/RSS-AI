@@ -26,4 +26,7 @@ dirs = "6"
 url = "2"
 
 [dev-dependencies]
+wiremock = "0.6"
 tempfile = "3"
+pretty_assertions = "1"
+fake = { version = "4", features = ["derive", "chrono"] }

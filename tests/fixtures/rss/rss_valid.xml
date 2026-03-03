@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Global Affairs Daily</title>
+    <link>https://example.com/global-affairs</link>
+    <description>In-depth analysis of international relations and geopolitics</description>
+    <language>en-us</language>
+    <lastBuildDate>Mon, 01 Jan 2024 12:00:00 +0000</lastBuildDate>
+    <atom:link href="https://example.com/global-affairs/feed.xml" rel="self" type="application/rss+xml"/>
+
+    <item>
+      <title>NATO Summit Addresses Eastern European Security Concerns</title>
+      <link>https://example.com/articles/nato-summit-2024</link>
+      <guid isPermaLink="true">https://example.com/articles/nato-summit-2024</guid>
+      <pubDate>Mon, 01 Jan 2024 10:00:00 +0000</pubDate>
+      <description>Alliance members discuss expanded defense commitments and new membership applications amid ongoing regional tensions.</description>
+      <category>Defense</category>
+      <category>NATO</category>
+    </item>
+
+    <item>
+      <title>South China Sea Tensions Rise Over Disputed Territory</title>
+      <link>https://example.com/articles/south-china-sea</link>
+      <guid isPermaLink="true">https://example.com/articles/south-china-sea</guid>
+      <pubDate>Sun, 31 Dec 2023 14:30:00 +0000</pubDate>
+      <description>Multiple nations assert overlapping claims as naval patrols increase in contested waters.</description>
+      <category>Asia-Pacific</category>
+    </item>
+
+    <item>
+      <title>Climate Accord Implementation Faces New Hurdles</title>
+      <link>https://example.com/articles/climate-accord</link>
+      <guid isPermaLink="true">https://example.com/articles/climate-accord</guid>
+      <pubDate>Sat, 30 Dec 2023 08:15:00 +0000</pubDate>
+      <description>Developing nations push for increased financial commitments from industrialized countries as deadlines approach.</description>
+      <category>Climate</category>
+      <category>Diplomacy</category>
+    </item>
+
+    <item>
+      <title>Middle East Peace Negotiations Enter Critical Phase</title>
+      <link>https://example.com/articles/middle-east-peace</link>
+      <guid isPermaLink="true">https://example.com/articles/middle-east-peace</guid>
+      <pubDate>Fri, 29 Dec 2023 16:45:00 +0000</pubDate>
+      <description>Regional mediators report progress on key sticking points after months of shuttle diplomacy.</description>
+      <category>Middle East</category>
+    </item>
+
+    <item>
+      <title>African Union Proposes Continental Free Trade Expansion</title>
+      <link>https://example.com/articles/au-free-trade</link>
+      <guid isPermaLink="true">https://example.com/articles/au-free-trade</guid>
+      <pubDate>Thu, 28 Dec 2023 11:00:00 +0000</pubDate>
+      <description>New proposal would reduce tariffs across 30 additional product categories and harmonize customs procedures.</description>
+      <category>Trade</category>
+      <category>Africa</category>
+    </item>
+  </channel>
+</rss>

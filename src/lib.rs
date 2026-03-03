@@ -10,3 +10,6 @@ pub mod scheduler;
 pub mod search;
 pub mod tagger;
 pub mod vector;
+
+#[cfg(test)]
+pub mod test_utils;
