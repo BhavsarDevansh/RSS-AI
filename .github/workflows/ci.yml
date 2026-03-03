@@ -29,6 +29,7 @@ jobs:
         run: cargo clippy -- -D warnings
 
       - name: Test
+        timeout-minutes: 1
         run: cargo test
 
       - name: Build release

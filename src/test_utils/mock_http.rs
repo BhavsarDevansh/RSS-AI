@@ -71,6 +71,15 @@ impl MockFeedServer {
             .mount(&self.server)
             .await;
     }
+
+    /// Mount a 304 Not Modified at the given path.
+    pub async fn mount_304(&self, not_modified_path: &str) {
+        Mock::given(method("GET"))
+            .and(path(not_modified_path))
+            .respond_with(ResponseTemplate::new(304))
+            .mount(&self.server)
+            .await;
+    }
 }
 
 #[cfg(test)]
@@ -113,5 +122,16 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(r429.status(), 429);
+    }
+
+    #[tokio::test]
+    async fn returns_304_not_modified() {
+        let server = MockFeedServer::start().await;
+        server.mount_304("/cached").await;
+
+        let resp = reqwest::get(format!("{}/cached", server.url()))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 304);
     }
 }
