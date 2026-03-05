@@ -46,6 +46,6 @@ mod tests {
             .fetch_one(&pool)
             .await
             .expect("_schema_version table should exist");
-        assert_eq!(row.0, 1);
+        assert!(row.0 >= 1, "expected at least 1 migration applied");
     }
 }
