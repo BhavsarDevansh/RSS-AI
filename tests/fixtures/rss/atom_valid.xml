@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Tech Policy Review</title>
+  <link href="https://example.com/tech-policy" rel="alternate"/>
+  <link href="https://example.com/tech-policy/atom.xml" rel="self"/>
+  <id>urn:uuid:a1b2c3d4-e5f6-7890-abcd-ef1234567890</id>
+  <updated>2024-01-01T12:00:00Z</updated>
+  <author>
+    <name>Tech Policy Editorial</name>
+  </author>
+
+  <entry>
+    <title>EU Digital Markets Act Enforcement Begins</title>
+    <link href="https://example.com/articles/eu-dma"/>
+    <id>urn:uuid:11111111-1111-1111-1111-111111111111</id>
+    <updated>2024-01-01T10:00:00Z</updated>
+    <summary>Major technology platforms face new compliance requirements under landmark European regulation.</summary>
+    <category term="regulation"/>
+  </entry>
+
+  <entry>
+    <title>AI Safety Standards Proposed by International Coalition</title>
+    <link href="https://example.com/articles/ai-safety"/>
+    <id>urn:uuid:22222222-2222-2222-2222-222222222222</id>
+    <updated>2023-12-31T14:30:00Z</updated>
+    <summary>Thirty nations agree on voluntary framework for responsible artificial intelligence development.</summary>
+    <category term="ai"/>
+    <category term="safety"/>
+  </entry>
+
+  <entry>
+    <title>Semiconductor Supply Chain Diversification Efforts</title>
+    <link href="https://example.com/articles/semiconductor-supply"/>
+    <id>urn:uuid:33333333-3333-3333-3333-333333333333</id>
+    <updated>2023-12-30T08:15:00Z</updated>
+    <summary>Countries invest billions in domestic chip manufacturing capacity to reduce geopolitical risk.</summary>
+    <category term="semiconductors"/>
+  </entry>
+
+  <entry>
+    <title>Data Privacy Frameworks Converge Across Jurisdictions</title>
+    <link href="https://example.com/articles/data-privacy"/>
+    <id>urn:uuid:44444444-4444-4444-4444-444444444444</id>
+    <updated>2023-12-29T16:45:00Z</updated>
+    <summary>New bilateral agreements enable cross-border data flows while maintaining privacy protections.</summary>
+    <category term="privacy"/>
+  </entry>
+
+  <entry>
+    <title>Open Source Security Initiative Gains Momentum</title>
+    <link href="https://example.com/articles/open-source-security"/>
+    <id>urn:uuid:55555555-5555-5555-5555-555555555555</id>
+    <updated>2023-12-28T11:00:00Z</updated>
+    <summary>Industry consortium pledges funding and engineering resources to audit critical open-source infrastructure.</summary>
+    <category term="security"/>
+    <category term="open-source"/>
+  </entry>
+</feed>

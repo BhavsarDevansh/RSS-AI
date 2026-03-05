@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  SQLX_OFFLINE: "true"
 
 jobs:
   check:
@@ -28,7 +29,29 @@ jobs:
         run: cargo clippy -- -D warnings
 
       - name: Test
+        timeout-minutes: 1
         run: cargo test
 
       - name: Build release
         run: cargo build --release
+
+  sqlx-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features sqlite
+
+      - name: Check sqlx prepared queries
+        run: |
+          # Only run check if .sqlx/ contains query files (skip if no compile-time queries yet)
+          if ls .sqlx/query-*.json 1>/dev/null 2>&1; then
+            cargo sqlx prepare --check --workspace
+          else
+            echo "No sqlx prepared queries found, skipping check"
+          fi

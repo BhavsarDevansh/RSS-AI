@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Understanding Modern Vector Search - AI Engineering Blog</title>
+</head>
+<body>
+  <header>
+    <h1>AI Engineering Blog</h1>
+    <nav><a href="/">Home</a> | <a href="/archive">Archive</a> | <a href="/about">About</a></nav>
+  </header>
+
+  <div class="layout">
+    <main>
+      <article class="post">
+        <h2>Understanding Modern Vector Search</h2>
+        <p class="meta">Posted on December 15, 2023 by Alex Chen</p>
+
+        <p>Vector search has become a cornerstone of modern information retrieval systems. In this post, we explore the fundamental concepts behind approximate nearest neighbor search and how it powers semantic search applications.</p>
+
+        <h3>What is Vector Search?</h3>
+        <p>At its core, vector search involves representing data as high-dimensional vectors (embeddings) and finding the most similar vectors to a query. Unlike keyword search, which matches exact terms, vector search captures semantic meaning.</p>
+
+        <h3>HNSW Algorithm</h3>
+        <p>Hierarchical Navigable Small World (HNSW) graphs provide an efficient data structure for approximate nearest neighbor search. The algorithm builds a multi-layer graph where each layer contains a subset of the points from the layer below.</p>
+
+        <p>Key parameters include the construction parameter M (maximum number of connections per node) and ef_construction (the size of the dynamic candidate list during construction).</p>
+
+        <h3>Practical Considerations</h3>
+        <p>When implementing vector search in production, consider memory usage, index build time, and query latency. For most applications, HNSW provides an excellent balance of speed and recall.</p>
+      </article>
+    </main>
+
+    <aside class="sidebar">
+      <h3>Related Posts</h3>
+      <ul>
+        <li><a href="/posts/embeddings-101">Embeddings 101</a></li>
+        <li><a href="/posts/rag-architecture">RAG Architecture Guide</a></li>
+        <li><a href="/posts/semantic-search">Semantic Search Patterns</a></li>
+      </ul>
+
+      <h3>Tags</h3>
+      <ul>
+        <li><a href="/tags/vector-search">vector-search</a></li>
+        <li><a href="/tags/hnsw">hnsw</a></li>
+        <li><a href="/tags/embeddings">embeddings</a></li>
+      </ul>
+    </aside>
+  </div>
+
+  <footer>
+    <p>&copy; 2023 AI Engineering Blog</p>
+  </footer>
+</body>
+</html>

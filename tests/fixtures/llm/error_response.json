@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "Rate limit reached for model `gpt-4o-mini` on tokens per min (TPM): Limit 60000, Used 59500, Requested 1000.",
+    "type": "tokens",
+    "param": null,
+    "code": "rate_limit_exceeded"
+  }
+}

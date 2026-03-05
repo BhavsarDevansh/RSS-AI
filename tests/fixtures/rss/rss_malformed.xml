@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Badly Formatted Feed</title>
+    <link>https://example.com/bad-feed</link>
+    <description>A feed with various formatting problems for testing error handling</description>
+
+    <item>
+      <title>Article With Bad Date</title>
+      <link>https://example.com/articles/bad-date</link>
+      <pubDate>not-a-real-date</pubDate>
+      <description>This item has an unparseable publication date.</description>
+    </item>
+
+    <item>
+      <title>Article Missing GUID</title>
+      <link>https://example.com/articles/no-guid</link>
+      <pubDate>Mon, 01 Jan 2024 10:00:00 +0000</pubDate>
+      <description>This item has no guid element at all.</description>
+    </item>
+
+    <item>
+      <title>Article With Unescaped HTML &amp; Entities</title>
+      <link>https://example.com/articles/bad-html</link>
+      <guid>bad-html-article</guid>
+      <pubDate>Mon, 01 Jan 2024 09:00:00 +0000</pubDate>
+      <description><![CDATA[This has <b>bold</b> and <script>alert('xss')</script> and "smart quotes" & ampersands.]]></description>
+    </item>
+
+    <item>
+      <link>https://example.com/articles/no-title</link>
+      <guid>no-title-article</guid>
+      <pubDate>Mon, 01 Jan 2024 08:00:00 +0000</pubDate>
+      <description>This item is missing its title element entirely.</description>
+    </item>
+
+    <item>
+      <title></title>
+      <link>https://example.com/articles/empty-title</link>
+      <guid>empty-title-article</guid>
+      <description>This item has an empty title.</description>
+    </item>
+  </channel>
+</rss>
