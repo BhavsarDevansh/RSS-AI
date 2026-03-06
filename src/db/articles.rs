@@ -107,11 +107,49 @@ pub async fn update_article_content(
     content: &str,
     content_hash: &str,
 ) -> Result<(), DbError> {
+    let word_count = content.split_whitespace().count() as i64;
+    update_article_content_with_metadata(
+        pool,
+        article_id,
+        content,
+        content_hash,
+        word_count,
+        None,
+        None,
+        None,
+    )
+    .await
+}
+
+/// Update extracted content fields and optional metadata from the article page.
+pub async fn update_article_content_with_metadata(
+    pool: &SqlitePool,
+    article_id: i64,
+    content: &str,
+    content_hash: &str,
+    word_count: i64,
+    title: Option<&str>,
+    author: Option<&str>,
+    published_at: Option<&str>,
+) -> Result<(), DbError> {
     let result = sqlx::query(
-        "UPDATE articles SET content = ?, content_hash = ?, content_extracted = 1, updated_at = datetime('now') WHERE id = ?",
+        "UPDATE articles SET
+            content = ?,
+            content_hash = ?,
+            word_count = ?,
+            title = COALESCE(?, title),
+            author = COALESCE(?, author),
+            published_at = COALESCE(?, published_at),
+            content_extracted = 1,
+            updated_at = datetime('now')
+         WHERE id = ?",
     )
     .bind(content)
     .bind(content_hash)
+    .bind(word_count)
+    .bind(title)
+    .bind(author)
+    .bind(published_at)
     .bind(article_id)
     .execute(pool)
     .await?;
@@ -296,6 +334,7 @@ mod tests {
         let updated = get_article(&pool, article.id).await.unwrap();
         assert_eq!(updated.content.as_deref(), Some("Full content"));
         assert_eq!(updated.content_hash.as_deref(), Some("hash123"));
+        assert_eq!(updated.word_count, Some(2));
         assert_eq!(updated.content_extracted, 1);
     }
 
@@ -582,6 +621,7 @@ mod tests {
         let article = insert_article(&pool, &sample_article(feed_id))
             .await
             .unwrap();
+        assert_eq!(article.word_count, None);
         assert_eq!(article.content_extracted, 0);
         assert_eq!(article.embedding_generated, 0);
         assert_eq!(article.tags_generated, 0);

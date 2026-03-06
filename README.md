@@ -78,7 +78,7 @@ embedding_model = "nomic-embed-text"
 embedding_dimensions = 768
 
 [extraction]
-user_agent = "rss-ai/0.4.0"
+user_agent = "rss-ai/0.6.0"
 request_timeout_seconds = 30
 
 [mcp]
