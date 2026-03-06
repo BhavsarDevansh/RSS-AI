@@ -44,6 +44,24 @@ RSS-AI is an AI-powered RSS reader combining feed aggregation with semantic sear
 - **`feed`** — RSS/Atom fetching with conditional requests (ETag/If-Modified-Since), deduplication, concurrent fetching via semaphore, error isolation per feed
 - **`extractor`** — Full article content extraction pipeline: fetches article URLs, extracts readable text/title/author/date from HTML (using `scraper` + `html2text`), respects `robots.txt` (cached), per-domain rate limiting (1 req/s), SHA-256 content hashing (`sha2`), word counting, boilerplate filtering. `ExtractedContent` struct. `process_pending_articles` batch processes unextracted articles. `ExtractorError` error type.
 - **`search`** — Tantivy full-text search index at `{data_dir}/tantivy_index/`. `SearchIndex` struct caches schema fields, reader, and default search fields for zero-overhead repeated queries. Schema: `article_id` (u64), `title`/`content`/`summary` (en_stem tokenizer), `author`/`feed_title` (default tokenizer, stored), `tags` (en_stem, not stored), `published_at` (date). Title boosted 2×, summary 1.5×. Date filtering and recency boost operate on raw timestamps (no string round-tripping). Snippet generation caps lowercase scan to avoid processing megabytes. `rebuild_index` batch-fetches all tags in one query. 50 MB default writer memory budget, `ReloadPolicy::OnCommitWithDelay`, 3× overfetch when post-filters active. `SearchError` error type.
+- **`embeddings/`** — Embedding generation via OpenAI-compatible `/v1/embeddings` API (module directory):
+  - `mod.rs` — re-exports only
+  - `error.rs` — `EmbeddingError` error type
+  - `types.rs` — API request/response data types + `EmbeddingBatchResult`
+  - `client.rs` — `EmbeddingClient` wrapping `reqwest::Client`; `embed_text`/`embed_batch` with retry (3× exponential backoff on 5xx/429/connection errors), dimension validation
+  - `text.rs` — `prepare_article_text` (title+content concat with null-byte/control-char sanitisation), `prepare_input` (zero-copy `Cow<str>` truncation to ~8192 tokens)
+  - `pipeline.rs` — `process_pending_articles` batch pipeline (default batch size 10), marks `embedding_generated` flag, returns `(article_id, Vec<f32>)` pairs for vector index storage
+  - `{client,text,pipeline}_tests.rs` — tests for each concern, compiled only under `#[cfg(test)]`
+
+### Module organisation
+Each file should have exactly one distinct concern. When a module has multiple concerns (e.g. error type, data types, client logic, pipeline), split it into a directory module (`mod.rs` + subfiles). Follow the pattern used by `embeddings/`:
+- `mod.rs` — re-exports only (no logic)
+- `error.rs` — error type
+- `types.rs` — data types / request-response structs
+- One file per logical concern (e.g. `client.rs`, `pipeline.rs`, `text.rs`)
+- Tests in separate `*_tests.rs` files, declared as `#[cfg(test)] mod *_tests;` in `mod.rs`
+
+Files may be small — that is fine. Clarity and maintainability are more important than file size.
 
 ### Key design decisions
 - **Runtime queries** (`sqlx::query` / `sqlx::query_as` without `!`) — avoids compile-time DB dependency
