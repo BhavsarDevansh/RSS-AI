@@ -32,6 +32,7 @@ pub struct Article {
     pub summary: Option<String>,
     pub content: Option<String>,
     pub content_hash: Option<String>,
+    pub word_count: Option<i64>,
     pub content_extracted: i64,
     pub embedding_generated: i64,
     pub tags_generated: i64,

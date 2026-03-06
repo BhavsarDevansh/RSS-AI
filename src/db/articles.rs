@@ -4,6 +4,16 @@ use sqlx::SqlitePool;
 use super::DbError;
 use super::models::{Article, NewArticle};
 
+/// Extracted article content payload for persistence.
+pub struct ExtractedArticleUpdate<'a> {
+    pub content: &'a str,
+    pub content_hash: &'a str,
+    pub word_count: i64,
+    pub title: Option<&'a str>,
+    pub author: Option<&'a str>,
+    pub published_at: Option<&'a str>,
+}
+
 /// Insert a single article. Returns `DuplicateEntry` on UNIQUE constraint violation.
 pub async fn insert_article(pool: &SqlitePool, article: &NewArticle) -> Result<Article, DbError> {
     let result = sqlx::query_as::<_, Article>(
@@ -107,11 +117,42 @@ pub async fn update_article_content(
     content: &str,
     content_hash: &str,
 ) -> Result<(), DbError> {
+    let word_count = content.split_whitespace().count() as i64;
+    let update = ExtractedArticleUpdate {
+        content,
+        content_hash,
+        word_count,
+        title: None,
+        author: None,
+        published_at: None,
+    };
+    update_article_content_with_metadata(pool, article_id, &update).await
+}
+
+/// Update extracted content fields and optional metadata from the article page.
+pub async fn update_article_content_with_metadata(
+    pool: &SqlitePool,
+    article_id: i64,
+    update: &ExtractedArticleUpdate<'_>,
+) -> Result<(), DbError> {
     let result = sqlx::query(
-        "UPDATE articles SET content = ?, content_hash = ?, content_extracted = 1, updated_at = datetime('now') WHERE id = ?",
+        "UPDATE articles SET
+            content = ?,
+            content_hash = ?,
+            word_count = ?,
+            title = COALESCE(?, title),
+            author = COALESCE(?, author),
+            published_at = COALESCE(?, published_at),
+            content_extracted = 1,
+            updated_at = datetime('now')
+         WHERE id = ?",
     )
-    .bind(content)
-    .bind(content_hash)
+    .bind(update.content)
+    .bind(update.content_hash)
+    .bind(update.word_count)
+    .bind(update.title)
+    .bind(update.author)
+    .bind(update.published_at)
     .bind(article_id)
     .execute(pool)
     .await?;
@@ -296,6 +337,7 @@ mod tests {
         let updated = get_article(&pool, article.id).await.unwrap();
         assert_eq!(updated.content.as_deref(), Some("Full content"));
         assert_eq!(updated.content_hash.as_deref(), Some("hash123"));
+        assert_eq!(updated.word_count, Some(2));
         assert_eq!(updated.content_extracted, 1);
     }
 
@@ -582,6 +624,7 @@ mod tests {
         let article = insert_article(&pool, &sample_article(feed_id))
             .await
             .unwrap();
+        assert_eq!(article.word_count, None);
         assert_eq!(article.content_extracted, 0);
         assert_eq!(article.embedding_generated, 0);
         assert_eq!(article.tags_generated, 0);

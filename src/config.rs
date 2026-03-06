@@ -110,7 +110,7 @@ impl Default for LlmConfig {
 impl Default for ExtractionConfig {
     fn default() -> Self {
         Self {
-            user_agent: "rss-ai/0.5.0".to_string(),
+            user_agent: "rss-ai/0.6.0".to_string(),
             request_timeout_seconds: 30,
             max_article_size_bytes: 5_242_880, // 5 MiB
         }
@@ -365,7 +365,7 @@ impl Config {
 
 [extraction]
 # User-Agent header sent when fetching articles.
-# user_agent = "rss-ai/0.5.0"
+# user_agent = "rss-ai/0.6.0"
 
 # HTTP request timeout in seconds.
 # request_timeout_seconds = 30
