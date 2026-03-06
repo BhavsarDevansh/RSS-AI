@@ -112,6 +112,46 @@ pub async fn update_poll_status(
     Ok(())
 }
 
+/// Store HTTP cache headers (ETag, Last-Modified) for conditional requests.
+pub async fn update_http_cache_headers(
+    pool: &SqlitePool,
+    feed_id: i64,
+    etag: Option<&str>,
+    last_modified: Option<&str>,
+) -> Result<(), DbError> {
+    sqlx::query(
+        "UPDATE feeds SET etag = ?, last_modified = ?, updated_at = datetime('now') WHERE id = ?",
+    )
+    .bind(etag)
+    .bind(last_modified)
+    .bind(feed_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// List all active (enabled) feeds.
+pub async fn list_active_feeds(pool: &SqlitePool) -> Result<Vec<Feed>, DbError> {
+    let feeds = sqlx::query_as::<_, Feed>("SELECT * FROM feeds WHERE active = 1 ORDER BY id")
+        .fetch_all(pool)
+        .await?;
+    Ok(feeds)
+}
+
+/// Update the stored feed URL (e.g. after a permanent redirect).
+pub async fn update_feed_url(
+    pool: &SqlitePool,
+    feed_id: i64,
+    new_url: &str,
+) -> Result<(), DbError> {
+    sqlx::query("UPDATE feeds SET url = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(new_url)
+        .bind(feed_id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

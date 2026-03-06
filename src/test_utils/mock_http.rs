@@ -19,6 +19,11 @@ impl MockFeedServer {
         self.server.uri()
     }
 
+    /// Access the underlying wiremock MockServer for custom mounts.
+    pub fn server(&self) -> &MockServer {
+        &self.server
+    }
+
     /// Mount an RSS/Atom feed at the given path.
     pub async fn mount_feed(&self, feed_path: &str, xml_body: &str) {
         Mock::given(method("GET"))
