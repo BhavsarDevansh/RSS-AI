@@ -73,8 +73,7 @@ impl SearchIndex {
             .reader_builder()
             .reload_policy(ReloadPolicy::OnCommitWithDelay)
             .try_into()?;
-        let default_search_fields =
-            vec![fields.title, fields.content, fields.summary, fields.tags];
+        let default_search_fields = vec![fields.title, fields.content, fields.summary, fields.tags];
         Ok(Self {
             index,
             fields,
@@ -289,7 +288,10 @@ pub fn index_article(
     fields: &SchemaFields,
     data: &ArticleIndexData<'_>,
 ) -> Result<(), SearchError> {
-    writer.delete_term(Term::from_field_u64(fields.article_id, data.article_id as u64));
+    writer.delete_term(Term::from_field_u64(
+        fields.article_id,
+        data.article_id as u64,
+    ));
     let doc = build_document(fields, data);
     writer.add_document(doc)?;
     writer.commit()?;
@@ -303,7 +305,10 @@ pub fn index_articles_batch(
     articles: &[ArticleIndexData<'_>],
 ) -> Result<usize, SearchError> {
     for data in articles {
-        writer.delete_term(Term::from_field_u64(fields.article_id, data.article_id as u64));
+        writer.delete_term(Term::from_field_u64(
+            fields.article_id,
+            data.article_id as u64,
+        ));
         let doc = build_document(fields, data);
         writer.add_document(doc)?;
     }
@@ -323,22 +328,18 @@ pub fn delete_article(
 }
 
 /// Drop all documents and rebuild the index from the database.
-pub async fn rebuild_index(
-    index: &Index,
-    pool: &sqlx::SqlitePool,
-) -> Result<usize, SearchError> {
+pub async fn rebuild_index(index: &Index, pool: &sqlx::SqlitePool) -> Result<usize, SearchError> {
     let fields = schema_fields(index);
     let mut writer = create_writer(index)?;
     writer.delete_all_documents()?;
     writer.commit()?;
 
     // Fetch all articles with extracted content
-    let articles: Vec<crate::db::Article> = sqlx::query_as(
-        "SELECT * FROM articles WHERE content_extracted = 1 ORDER BY id",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(crate::db::DbError::from)?;
+    let articles: Vec<crate::db::Article> =
+        sqlx::query_as("SELECT * FROM articles WHERE content_extracted = 1 ORDER BY id")
+            .fetch_all(pool)
+            .await
+            .map_err(crate::db::DbError::from)?;
 
     // Fetch feed titles for all feeds
     let feeds: Vec<crate::db::Feed> = sqlx::query_as("SELECT * FROM feeds")
@@ -532,9 +533,8 @@ fn search_inner(
 
         let snippet = generate_snippet(content_text, &snippet_terms);
 
-        let published_at = pub_timestamp_secs.and_then(|ts| {
-            chrono::DateTime::from_timestamp(ts, 0).map(|d| d.to_rfc3339())
-        });
+        let published_at = pub_timestamp_secs
+            .and_then(|ts| chrono::DateTime::from_timestamp(ts, 0).map(|d| d.to_rfc3339()));
 
         results.push(SearchResult {
             article_id,
@@ -660,7 +660,9 @@ mod tests {
         ArticleIndexData {
             article_id: 1,
             title: "Rust Programming Language",
-            content: Some("Rust is a systems programming language focused on safety and performance. It prevents memory errors without a garbage collector."),
+            content: Some(
+                "Rust is a systems programming language focused on safety and performance. It prevents memory errors without a garbage collector.",
+            ),
             summary: Some("An introduction to Rust"),
             author: Some("Jane Doe"),
             tags,
@@ -693,7 +695,9 @@ mod tests {
         let data = ArticleIndexData {
             article_id: 1,
             title: "Fuel Prices Today",
-            content: Some("The fuel prices have risen dramatically in the past week. Fuel prices affect the economy broadly."),
+            content: Some(
+                "The fuel prices have risen dramatically in the past week. Fuel prices affect the economy broadly.",
+            ),
             summary: None,
             author: None,
             tags: &tags,
@@ -705,7 +709,9 @@ mod tests {
         let data2 = ArticleIndexData {
             article_id: 2,
             title: "Fuel Efficiency Tips",
-            content: Some("Here are some tips to save fuel. Prices of other commodities are stable."),
+            content: Some(
+                "Here are some tips to save fuel. Prices of other commodities are stable.",
+            ),
             summary: None,
             author: None,
             tags: &tags,
@@ -775,7 +781,9 @@ mod tests {
         let data = ArticleIndexData {
             article_id: 1,
             title: "Memory Safety",
-            content: Some("Rust provides memory safety without garbage collection. The borrow checker ensures references are always valid. This makes Rust unique among systems languages."),
+            content: Some(
+                "Rust provides memory safety without garbage collection. The borrow checker ensures references are always valid. This makes Rust unique among systems languages.",
+            ),
             summary: None,
             author: None,
             tags: &tags,
