@@ -20,6 +20,11 @@ impl MockLlmServer {
         self.server.uri()
     }
 
+    /// Access the underlying wiremock `MockServer` for custom mounts.
+    pub fn server(&self) -> &MockServer {
+        &self.server
+    }
+
     /// Mount a chat completion response at `/v1/chat/completions`.
     pub async fn mount_chat_completion(&self, response_json: &str) {
         Mock::given(method("POST"))
