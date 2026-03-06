@@ -4,6 +4,16 @@ use sqlx::SqlitePool;
 use super::DbError;
 use super::models::{Article, NewArticle};
 
+/// Extracted article content payload for persistence.
+pub struct ExtractedArticleUpdate<'a> {
+    pub content: &'a str,
+    pub content_hash: &'a str,
+    pub word_count: i64,
+    pub title: Option<&'a str>,
+    pub author: Option<&'a str>,
+    pub published_at: Option<&'a str>,
+}
+
 /// Insert a single article. Returns `DuplicateEntry` on UNIQUE constraint violation.
 pub async fn insert_article(pool: &SqlitePool, article: &NewArticle) -> Result<Article, DbError> {
     let result = sqlx::query_as::<_, Article>(
@@ -108,29 +118,22 @@ pub async fn update_article_content(
     content_hash: &str,
 ) -> Result<(), DbError> {
     let word_count = content.split_whitespace().count() as i64;
-    update_article_content_with_metadata(
-        pool,
-        article_id,
+    let update = ExtractedArticleUpdate {
         content,
         content_hash,
         word_count,
-        None,
-        None,
-        None,
-    )
-    .await
+        title: None,
+        author: None,
+        published_at: None,
+    };
+    update_article_content_with_metadata(pool, article_id, &update).await
 }
 
 /// Update extracted content fields and optional metadata from the article page.
 pub async fn update_article_content_with_metadata(
     pool: &SqlitePool,
     article_id: i64,
-    content: &str,
-    content_hash: &str,
-    word_count: i64,
-    title: Option<&str>,
-    author: Option<&str>,
-    published_at: Option<&str>,
+    update: &ExtractedArticleUpdate<'_>,
 ) -> Result<(), DbError> {
     let result = sqlx::query(
         "UPDATE articles SET
@@ -144,12 +147,12 @@ pub async fn update_article_content_with_metadata(
             updated_at = datetime('now')
          WHERE id = ?",
     )
-    .bind(content)
-    .bind(content_hash)
-    .bind(word_count)
-    .bind(title)
-    .bind(author)
-    .bind(published_at)
+    .bind(update.content)
+    .bind(update.content_hash)
+    .bind(update.word_count)
+    .bind(update.title)
+    .bind(update.author)
+    .bind(update.published_at)
     .bind(article_id)
     .execute(pool)
     .await?;

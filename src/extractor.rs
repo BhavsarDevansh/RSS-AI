@@ -178,18 +178,17 @@ pub async fn process_pending_articles(
         match extract_content(&url, config).await {
             Ok(extracted) => {
                 let published = extracted.published_at.map(|d| d.to_rfc3339());
+                let update = db::articles::ExtractedArticleUpdate {
+                    content: &extracted.text,
+                    content_hash: &extracted.content_hash,
+                    word_count: extracted.word_count as i64,
+                    title: extracted.title.as_deref(),
+                    author: extracted.author.as_deref(),
+                    published_at: published.as_deref(),
+                };
 
-                db::articles::update_article_content_with_metadata(
-                    pool,
-                    article_id,
-                    &extracted.text,
-                    &extracted.content_hash,
-                    extracted.word_count as i64,
-                    extracted.title.as_deref(),
-                    extracted.author.as_deref(),
-                    published.as_deref(),
-                )
-                .await?;
+                db::articles::update_article_content_with_metadata(pool, article_id, &update)
+                    .await?;
 
                 processed += 1;
             }
