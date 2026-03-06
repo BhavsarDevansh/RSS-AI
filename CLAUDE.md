@@ -20,7 +20,7 @@ cargo run -- config            # Print default TOML config template
 The `src/test_utils/` module provides shared test infrastructure:
 - `db::test_pool()` — in-memory SQLite pool with migrations applied
 - `fixtures::read_fixture(path)` — loads files from `tests/fixtures/`
-- `mock_http::MockFeedServer` — wiremock-based mock RSS/HTTP server
+- `mock_http::MockFeedServer` — wiremock-based mock RSS/HTTP server (exposes `.server()` for custom wiremock mounts)
 - `mock_llm::MockLlmServer` — wiremock-based mock OpenAI-compatible API
 
 Fixture files live in `tests/fixtures/{rss,html,llm,config}/`.
@@ -29,14 +29,32 @@ Fixture files live in `tests/fixtures/{rss,html,llm,config}/`.
 
 RSS-AI is an AI-powered RSS reader combining feed aggregation with semantic search and content analysis. It exposes functionality via a CLI (`clap` derive API) with `serve` and `config` subcommands.
 
-**Data pipeline:** feeds are fetched (`feed`) → HTML content extracted (`extractor` using `scraper` + `html2text`) → stored in SQLite (`db` via `sqlx`) → indexed for full-text search (`search` via `tantivy`) and vector similarity search (`vector` via `hnsw_rs`) → auto-tagged (`tagger`) and cross-linked (`linker`) → queried via natural language (`query`) or MCP protocol (`mcp`). The `scheduler` handles periodic feed polling.
+**Data pipeline:** feeds are fetched (`feed` using `feed-rs` + `reqwest`) → HTML content extracted (`extractor` using `scraper` + `html2text`) → stored in SQLite (`db` via `sqlx`) → indexed for full-text search (`search` via `tantivy`) and vector similarity search (`vector` via `hnsw_rs`) → auto-tagged (`tagger`) and cross-linked (`linker`) → queried via natural language (`query`) or MCP protocol (`mcp`). The `scheduler` handles periodic feed polling.
 
-**Key design decisions:**
+### Implemented modules
+
+- **`config`** — TOML config with env overrides, validation, tilde expansion
+- **`db/`** — SQLite persistence (module directory, not single file):
+  - `mod.rs` — `DbError`, `init_pool(data_dir)` (WAL, FK, busy_timeout, migrations)
+  - `models.rs` — `Feed`, `Article`, `Tag`, `ArticleTag`, `ArticleLink`, `NewArticle`, etc.
+  - `feeds.rs` — CRUD + poll status + HTTP cache headers + active feed listing
+  - `articles.rs` — insert/batch/get/exists/update content/mark flags/search/recent
+  - `tags.rs` — get_or_create/add to article/query by tag/list/top
+  - `links.rs` — add/get/bidirectional/BFS graph traversal
+- **`feed`** — RSS/Atom fetching with conditional requests (ETag/If-Modified-Since), deduplication, concurrent fetching via semaphore, error isolation per feed
+
+### Key design decisions
+- **Runtime queries** (`sqlx::query` / `sqlx::query_as` without `!`) — avoids compile-time DB dependency
 - Pure Rust vector search (`hnsw_rs`) instead of `usearch` to avoid C++ build dependency
 - `scraper` + `html2text` for content extraction instead of immature readability crates
-- `sqlx` with compile-time query verification and migrations
+- `sqlx` with embedded migrations (`sqlx::migrate!()`)
 - Structured logging via `tracing` with env-filter
 - `thiserror` for library errors, `anyhow` for application errors
+- Each module has its own error type (e.g. `DbError`, `FeedError`)
+
+## Database
+
+SQLite with WAL mode, foreign keys, 5s busy timeout. Migrations in `migrations/` dir (3 files). Tables: `feeds`, `articles`, `tags`, `article_tags`, `article_links`. Triggers maintain `tags.article_count`. Cascade deletes on feed removal.
 
 ## CI
 
@@ -44,8 +62,8 @@ GitHub Actions on push/PR to `main`: fmt check → clippy → test → release b
 
 ## Branch Convention
 
-Feature branches follow `issue-N/description` pattern (e.g., `issue-1/project-scaffolding`).
+Feature branches follow `issue-N/description` pattern (e.g., `issue-3/database-layer`).
 
 ## Versioning
 
-Uses Semantic Version. Every update should change the application version number in cargo.toml
+Uses Semantic Versioning. Every update should change the application version number in Cargo.toml and the user-agent string in `src/config.rs`.
