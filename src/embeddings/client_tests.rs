@@ -31,7 +31,7 @@ async fn embed_text_with_mock_server() {
     let expected_vec = vec![0.1, 0.2, 0.3, 0.4];
     server.expect_embedding(expected_vec.clone()).await;
 
-    let client = EmbeddingClient::with_url(&server.url(), "test-model", dims);
+    let client = EmbeddingClient::with_url(&server.url(), "test-model", dims).unwrap();
     let result = client.embed_text("hello world").await.unwrap();
 
     assert_eq!(result.len(), dims);
@@ -47,7 +47,7 @@ async fn text_truncation() {
     let server = MockLlmServer::start().await;
     server.expect_embedding(vec![0.1, 0.2, 0.3]).await;
 
-    let mut client = EmbeddingClient::with_url(&server.url(), "test", 3);
+    let mut client = EmbeddingClient::with_url(&server.url(), "test", 3).unwrap();
     client.max_input_chars = 20;
 
     let long_text = "a".repeat(100);
@@ -66,7 +66,7 @@ async fn batch_embedding() {
     let response = make_embedding_response(&vecs);
     server.mount_embeddings(&response).await;
 
-    let client = EmbeddingClient::with_url(&server.url(), "test", 2);
+    let client = EmbeddingClient::with_url(&server.url(), "test", 2).unwrap();
     let texts = vec!["first", "second", "third"];
     let results = client.embed_batch(&texts).await.unwrap();
 
@@ -80,7 +80,7 @@ async fn wrong_dimensions_rejected() {
     let server = MockLlmServer::start().await;
     server.expect_embedding(vec![0.1, 0.2, 0.3]).await;
 
-    let client = EmbeddingClient::with_url(&server.url(), "test", 5);
+    let client = EmbeddingClient::with_url(&server.url(), "test", 5).unwrap();
     let err = client.embed_text("hello").await.unwrap_err();
 
     assert!(
@@ -106,7 +106,7 @@ async fn server_error_returns_error() {
         .mount(server.server())
         .await;
 
-    let client = EmbeddingClient::with_url(&server.url(), "test", 3);
+    let client = EmbeddingClient::with_url(&server.url(), "test", 3).unwrap();
     let err = client.embed_text("hello").await.unwrap_err();
 
     assert!(

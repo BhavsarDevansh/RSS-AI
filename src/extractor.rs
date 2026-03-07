@@ -76,8 +76,14 @@ impl RobotsRules {
     }
 }
 
+/// Maximum size of robots.txt response body we will parse (512 KiB).
+const MAX_ROBOTS_TXT_BYTES: usize = 512 * 1024;
+
+/// Time-to-live for cached robots.txt rules (24 hours).
+const ROBOTS_CACHE_TTL: Duration = Duration::from_secs(24 * 60 * 60);
+
 static DOMAIN_LAST_REQUEST: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
-static ROBOTS_CACHE: OnceLock<Mutex<HashMap<String, RobotsRules>>> = OnceLock::new();
+static ROBOTS_CACHE: OnceLock<Mutex<HashMap<String, (RobotsRules, Instant)>>> = OnceLock::new();
 
 /// Fetch and extract readable content from a single article URL.
 pub async fn extract_content(
@@ -85,6 +91,7 @@ pub async fn extract_content(
     config: &Config,
 ) -> Result<ExtractedContent, ExtractorError> {
     let parsed_url = Url::parse(url).map_err(|_| ExtractorError::InvalidUrl(url.to_string()))?;
+    validate_url(&parsed_url)?;
     let domain = domain_key(&parsed_url)?;
     let client = build_client(config)?;
 
@@ -215,6 +222,61 @@ fn build_client(config: &Config) -> Result<reqwest::Client, ExtractorError> {
         })
 }
 
+/// Reject URLs that could lead to SSRF — only allow http/https with public hosts.
+/// In test builds the check is a no-op so wiremock (127.0.0.1) works;
+/// use [`validate_url_strict`] directly for unit-testing the validation logic.
+fn validate_url(url: &Url) -> Result<(), ExtractorError> {
+    if cfg!(test) {
+        return Ok(());
+    }
+    validate_url_strict(url)
+}
+
+/// Strict URL validation — rejects private/internal addresses and non-http schemes.
+fn validate_url_strict(url: &Url) -> Result<(), ExtractorError> {
+    let scheme = url.scheme();
+    if scheme != "http" && scheme != "https" {
+        return Err(ExtractorError::InvalidUrl(format!(
+            "unsupported scheme: {scheme}"
+        )));
+    }
+
+    match url.host() {
+        Some(url::Host::Ipv4(ip)) => {
+            if ip.is_loopback()
+                || ip.is_private()
+                || ip.is_link_local()
+                || ip.is_unspecified()
+                || ip.is_broadcast()
+            {
+                return Err(ExtractorError::InvalidUrl(format!(
+                    "private/internal IP address: {ip}"
+                )));
+            }
+        }
+        Some(url::Host::Ipv6(ip)) => {
+            if ip.is_loopback() || ip.is_unspecified() {
+                return Err(ExtractorError::InvalidUrl(format!(
+                    "private/internal IPv6 address: {ip}"
+                )));
+            }
+        }
+        Some(url::Host::Domain(domain)) => {
+            if domain == "localhost" || domain.ends_with(".local") || domain.ends_with(".internal")
+            {
+                return Err(ExtractorError::InvalidUrl(format!(
+                    "private/internal domain: {domain}"
+                )));
+            }
+        }
+        None => {
+            return Err(ExtractorError::InvalidUrl(url.as_str().to_string()));
+        }
+    }
+
+    Ok(())
+}
+
 fn domain_key(url: &Url) -> Result<String, ExtractorError> {
     let host = url
         .host_str()
@@ -264,8 +326,13 @@ async fn is_allowed_by_robots(client: &reqwest::Client, url: &Url, config: &Conf
     };
 
     let cache = ROBOTS_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(rules) = cache.lock().await.get(&domain).cloned() {
-        return rules.allows(url.path());
+    {
+        let lock = cache.lock().await;
+        if let Some((rules, cached_at)) = lock.get(&domain)
+            && cached_at.elapsed() < ROBOTS_CACHE_TTL
+        {
+            return rules.allows(url.path());
+        }
     }
 
     let robots_url = format!("{domain}/robots.txt");
@@ -283,18 +350,25 @@ async fn is_allowed_by_robots(client: &reqwest::Client, url: &Url, config: &Conf
         return true;
     }
 
-    let body = match response.text().await {
-        Ok(text) => text,
+    let body_bytes = match response.bytes().await {
+        Ok(bytes) => bytes,
         Err(err) => {
             tracing::debug!(robots_url = %robots_url, error = %err, "robots read failed, allowing request");
             return true;
         }
     };
 
+    // Reject oversized robots.txt to prevent memory abuse
+    if body_bytes.len() > MAX_ROBOTS_TXT_BYTES {
+        tracing::warn!(robots_url = %robots_url, size = body_bytes.len(), "robots.txt too large, allowing request");
+        return true;
+    }
+
+    let body = String::from_utf8_lossy(&body_bytes);
     let rules = parse_robots_rules(&body, &config.extraction.user_agent);
     let allowed = rules.allows(url.path());
 
-    cache.lock().await.insert(domain, rules);
+    cache.lock().await.insert(domain, (rules, Instant::now()));
     allowed
 }
 
@@ -446,8 +520,9 @@ fn select_primary_root<'a>(document: &'a Html) -> Option<ElementRef<'a>> {
 }
 
 fn collect_readable_blocks(root: ElementRef<'_>) -> String {
-    let selector = Selector::parse("h1, h2, h3, h4, h5, h6, p, li, pre, blockquote")
-        .expect("valid block selector");
+    let Ok(selector) = Selector::parse("h1, h2, h3, h4, h5, h6, p, li, pre, blockquote") else {
+        return String::new();
+    };
     let mut blocks = Vec::new();
 
     for element in root.select(&selector) {
@@ -615,7 +690,9 @@ fn extract_published_at(document: &Html) -> Option<DateTime<Utc>> {
         }
     }
 
-    let time_selector = Selector::parse("time").expect("valid time selector");
+    let Ok(time_selector) = Selector::parse("time") else {
+        return None;
+    };
     for element in document.select(&time_selector) {
         if let Some(datetime) = element.value().attr("datetime")
             && let Some(dt) = parse_datetime(datetime)
@@ -678,10 +755,14 @@ fn strip_by_prefix(author: &str) -> String {
 }
 
 fn normalize_whitespace(input: &str) -> String {
-    let mut normalized = String::with_capacity(input.len());
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    let mut normalized = String::with_capacity(trimmed.len());
     let mut previous_was_space = false;
 
-    for ch in input.chars() {
+    for ch in trimmed.chars() {
         if ch.is_whitespace() {
             if !previous_was_space {
                 normalized.push(' ');
@@ -693,7 +774,9 @@ fn normalize_whitespace(input: &str) -> String {
         }
     }
 
-    normalized.trim().to_string()
+    // Trailing whitespace only possible if input ended with whitespace, which
+    // we already trimmed above.
+    normalized
 }
 
 fn truncate_utf8(input: &str, max_bytes: usize) -> String {
@@ -701,19 +784,14 @@ fn truncate_utf8(input: &str, max_bytes: usize) -> String {
         return input.to_string();
     }
 
-    let mut last_boundary = 0usize;
-    for (idx, _) in input.char_indices() {
-        if idx > max_bytes {
-            break;
-        }
-        last_boundary = idx;
+    // Find the last valid char boundary at or before max_bytes using
+    // floor_char_boundary logic (walks back from the cut point).
+    let mut end = max_bytes;
+    while end > 0 && !input.is_char_boundary(end) {
+        end -= 1;
     }
 
-    if last_boundary == 0 {
-        return String::new();
-    }
-
-    input[..last_boundary].to_string()
+    input[..end].to_string()
 }
 
 fn count_words(text: &str) -> usize {
@@ -728,7 +806,12 @@ fn compute_content_hash(text: &str) -> String {
 }
 
 fn is_potentially_incomplete(raw_html: &str, extracted_text: &str) -> bool {
-    let lower = raw_html.to_lowercase();
+    let short_content = count_words(extracted_text) < 250;
+    // Short-circuit: no need to scan HTML if content is long enough
+    if !short_content {
+        return false;
+    }
+
     let paywall_markers = [
         "subscriber only",
         "premium content",
@@ -738,8 +821,13 @@ fn is_potentially_incomplete(raw_html: &str, extracted_text: &str) -> bool {
         "paywall",
     ];
 
-    let has_paywall_marker = paywall_markers.iter().any(|m| lower.contains(m));
-    let short_content = count_words(extracted_text) < 250;
+    // Case-insensitive search without allocating a lowercased copy of the entire HTML
+    let has_paywall_marker = paywall_markers.iter().any(|marker| {
+        raw_html
+            .as_bytes()
+            .windows(marker.len())
+            .any(|window| window.eq_ignore_ascii_case(marker.as_bytes()))
+    });
 
     has_paywall_marker && short_content
 }
@@ -818,11 +906,98 @@ mod tests {
     }
 
     #[test]
+    fn truncate_utf8_respects_char_boundaries() {
+        // é is 2 bytes in UTF-8
+        let text = "héllo";
+        let truncated = truncate_utf8(text, 2);
+        // Should truncate to "h" (1 byte) rather than splitting the é
+        assert_eq!(truncated, "h");
+    }
+
+    #[test]
     fn content_hash_is_stable_for_equivalent_whitespace() {
         let first = compute_content_hash("Hello   world\nfrom   RSS-AI");
         let second = compute_content_hash("Hello world from RSS-AI");
         assert_eq!(first, second);
     }
+
+    // ── SSRF validation tests ──────────────────────────────────────
+
+    #[test]
+    fn validate_url_rejects_private_ips() {
+        let cases = [
+            "http://127.0.0.1/path",
+            "http://10.0.0.1/path",
+            "http://192.168.1.1/path",
+            "http://172.16.0.1/path",
+            "http://169.254.1.1/path",
+            "http://0.0.0.0/path",
+        ];
+        for url_str in cases {
+            let url = Url::parse(url_str).unwrap();
+            assert!(
+                validate_url_strict(&url).is_err(),
+                "expected rejection for {url_str}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_url_rejects_localhost_domain() {
+        let url = Url::parse("http://localhost/path").unwrap();
+        assert!(validate_url_strict(&url).is_err());
+    }
+
+    #[test]
+    fn validate_url_rejects_internal_domains() {
+        let cases = [
+            "http://myservice.local/path",
+            "http://myservice.internal/path",
+        ];
+        for url_str in cases {
+            let url = Url::parse(url_str).unwrap();
+            assert!(
+                validate_url_strict(&url).is_err(),
+                "expected rejection for {url_str}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_url_rejects_non_http_schemes() {
+        let cases = ["ftp://example.com/file", "file:///etc/passwd"];
+        for url_str in cases {
+            let url = Url::parse(url_str).unwrap();
+            assert!(
+                validate_url_strict(&url).is_err(),
+                "expected rejection for {url_str}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_url_allows_public_urls() {
+        let cases = [
+            "https://example.com/article",
+            "http://93.184.216.34/page",
+            "https://news.ycombinator.com/",
+        ];
+        for url_str in cases {
+            let url = Url::parse(url_str).unwrap();
+            assert!(
+                validate_url_strict(&url).is_ok(),
+                "expected allow for {url_str}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_url_rejects_ipv6_loopback() {
+        let url = Url::parse("http://[::1]/path").unwrap();
+        assert!(validate_url_strict(&url).is_err());
+    }
+
+    // ── Integration tests ──────────────────────────────────────────
 
     #[tokio::test]
     async fn extract_content_handles_404() {
@@ -1038,5 +1213,80 @@ mod tests {
         assert!(updated.content_hash.is_some());
         assert!(updated.word_count.unwrap_or_default() > 0);
         assert_eq!(updated.author.as_deref(), Some("Jane Doe"));
+    }
+
+    // ── Edge case tests ────────────────────────────────────────────
+
+    #[test]
+    fn normalize_whitespace_edge_cases() {
+        assert_eq!(normalize_whitespace(""), "");
+        assert_eq!(normalize_whitespace("   "), "");
+        assert_eq!(normalize_whitespace("  hello  "), "hello");
+        assert_eq!(normalize_whitespace("a\t\n\r  b"), "a b");
+    }
+
+    #[test]
+    fn truncate_utf8_edge_cases() {
+        assert_eq!(truncate_utf8("", 10), "");
+        assert_eq!(truncate_utf8("short", 100), "short");
+        assert_eq!(truncate_utf8("abc", 0), "");
+    }
+
+    #[test]
+    fn parse_datetime_various_formats() {
+        assert!(parse_datetime("2024-01-01T10:00:00+00:00").is_some());
+        assert!(parse_datetime("Mon, 01 Jan 2024 10:00:00 +0000").is_some());
+        assert!(parse_datetime("2024-01-01 10:00:00").is_some());
+        assert!(parse_datetime("2024-01-01T10:00:00").is_some());
+        assert!(parse_datetime("2024-01-01 10:00").is_some());
+        assert!(parse_datetime("2024-01-01").is_some());
+        assert!(parse_datetime("January 01, 2024").is_some());
+        assert!(parse_datetime("Jan 01, 2024").is_some());
+        assert!(parse_datetime("not a date").is_none());
+        assert!(parse_datetime("").is_none());
+    }
+
+    #[test]
+    fn robots_rules_empty_allows_all() {
+        let rules = RobotsRules::default();
+        assert!(rules.allows("/anything"));
+    }
+
+    #[test]
+    fn robots_rules_longest_match_wins() {
+        let rules = RobotsRules {
+            allow_paths: vec!["/api/public".to_string()],
+            disallow_paths: vec!["/api".to_string()],
+        };
+        // /api/public should be allowed (longer allow match)
+        assert!(rules.allows("/api/public/data"));
+        // /api/private should be disallowed
+        assert!(!rules.allows("/api/private"));
+    }
+
+    #[test]
+    fn is_potentially_incomplete_short_circuits_long_content() {
+        let long_text = "word ".repeat(300);
+        // Even with paywall markers, long content should not be flagged
+        assert!(!is_potentially_incomplete(
+            "<div>subscribe now</div>",
+            &long_text
+        ));
+    }
+
+    #[test]
+    fn compute_content_hash_deterministic() {
+        let h1 = compute_content_hash("hello world");
+        let h2 = compute_content_hash("hello world");
+        assert_eq!(h1, h2);
+        assert_eq!(h1.len(), 64); // SHA-256 hex length
+    }
+
+    #[test]
+    fn strip_by_prefix_various() {
+        assert_eq!(strip_by_prefix("By Jane Doe"), "Jane Doe");
+        assert_eq!(strip_by_prefix("by Jane Doe"), "Jane Doe");
+        assert_eq!(strip_by_prefix("Jane Doe"), "Jane Doe");
+        assert_eq!(strip_by_prefix("  By  Jane Doe  "), "Jane Doe");
     }
 }

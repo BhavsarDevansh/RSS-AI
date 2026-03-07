@@ -110,7 +110,7 @@ impl Default for LlmConfig {
 impl Default for ExtractionConfig {
     fn default() -> Self {
         Self {
-            user_agent: "rss-ai/0.6.0".to_string(),
+            user_agent: "rss-ai/0.7.0".to_string(),
             request_timeout_seconds: 30,
             max_article_size_bytes: 5_242_880, // 5 MiB
         }
@@ -226,6 +226,25 @@ impl Config {
                 "temperature must be between 0.0 and 2.0, got {}",
                 self.llm.temperature
             )));
+        }
+
+        // extraction
+        if self.extraction.request_timeout_seconds < 1 {
+            return Err(ConfigError::Validation(
+                "request_timeout_seconds must be >= 1".to_string(),
+            ));
+        }
+        if self.extraction.max_article_size_bytes < 1024 {
+            return Err(ConfigError::Validation(
+                "max_article_size_bytes must be >= 1024".to_string(),
+            ));
+        }
+
+        // embedding dimensions
+        if self.llm.embedding_dimensions == 0 {
+            return Err(ConfigError::Validation(
+                "embedding_dimensions must be > 0".to_string(),
+            ));
         }
 
         // SSE host must not be empty
@@ -365,7 +384,7 @@ impl Config {
 
 [extraction]
 # User-Agent header sent when fetching articles.
-# user_agent = "rss-ai/0.6.0"
+# user_agent = "rss-ai/0.7.0"
 
 # HTTP request timeout in seconds.
 # request_timeout_seconds = 30
@@ -517,5 +536,53 @@ log_level = "debug"
         let mut cfg: Config = toml::from_str(template).unwrap();
         cfg.service.data_dir = "/tmp/rss-ai-test".to_string();
         cfg.validate().unwrap();
+    }
+
+    #[test]
+    fn bad_request_timeout_fails_validation() {
+        let mut cfg = test_config();
+        cfg.extraction.request_timeout_seconds = 0;
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            matches!(err, ConfigError::Validation(ref msg) if msg.contains("request_timeout_seconds"))
+        );
+    }
+
+    #[test]
+    fn bad_max_article_size_fails_validation() {
+        let mut cfg = test_config();
+        cfg.extraction.max_article_size_bytes = 100;
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            matches!(err, ConfigError::Validation(ref msg) if msg.contains("max_article_size_bytes"))
+        );
+    }
+
+    #[test]
+    fn zero_embedding_dimensions_fails_validation() {
+        let mut cfg = test_config();
+        cfg.llm.embedding_dimensions = 0;
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            matches!(err, ConfigError::Validation(ref msg) if msg.contains("embedding_dimensions"))
+        );
+    }
+
+    #[test]
+    fn bad_concurrent_fetches_fails_validation() {
+        let mut cfg = test_config();
+        cfg.polling.max_concurrent_fetches = 0;
+        let err = cfg.validate().unwrap_err();
+        assert!(
+            matches!(err, ConfigError::Validation(ref msg) if msg.contains("max_concurrent_fetches"))
+        );
+    }
+
+    #[test]
+    fn empty_sse_host_fails_validation() {
+        let mut cfg = test_config();
+        cfg.mcp.sse_host = "".to_string();
+        let err = cfg.validate().unwrap_err();
+        assert!(matches!(err, ConfigError::Validation(ref msg) if msg.contains("sse_host")));
     }
 }

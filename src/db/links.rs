@@ -65,7 +65,12 @@ pub async fn get_linked_articles(
     Ok(links)
 }
 
+/// Maximum number of nodes the BFS will visit, preventing resource exhaustion
+/// on pathologically connected graphs.
+const MAX_GRAPH_NODES: usize = 10_000;
+
 /// Build a link graph via BFS from a starting article, up to `depth` hops.
+/// Visits at most [`MAX_GRAPH_NODES`] nodes to prevent unbounded memory usage.
 pub async fn get_link_graph(
     pool: &SqlitePool,
     start_article_id: i64,
@@ -79,6 +84,10 @@ pub async fn get_link_graph(
     queue.push_back((start_article_id, 0));
 
     while let Some((current_id, current_depth)) = queue.pop_front() {
+        if graph.len() >= MAX_GRAPH_NODES {
+            break;
+        }
+
         let links = get_linked_articles(pool, current_id).await?;
 
         let mut linked_ids: Vec<i64> = Vec::new();
@@ -91,7 +100,8 @@ pub async fn get_link_graph(
 
             linked_ids.push(neighbor);
 
-            if current_depth < depth && visited.insert(neighbor) {
+            if current_depth < depth && visited.len() < MAX_GRAPH_NODES && visited.insert(neighbor)
+            {
                 queue.push_back((neighbor, current_depth + 1));
             }
         }

@@ -20,33 +20,37 @@ pub struct EmbeddingClient {
 }
 
 impl EmbeddingClient {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(config: &Config) -> Result<Self, EmbeddingError> {
         let base = config.llm.api_base_url.trim_end_matches('/');
-        Self {
-            client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(120))
-                .build()
-                .expect("failed to build reqwest client"),
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(120))
+            .build()?;
+        Ok(Self {
+            client,
             endpoint: format!("{base}/v1/embeddings"),
             model: config.llm.embedding_model.clone(),
             expected_dimensions: config.llm.embedding_dimensions as usize,
             max_input_chars: DEFAULT_MAX_INPUT_CHARS,
-        }
+        })
     }
 
     /// Create a client pointing at a specific URL (useful for tests).
-    pub fn with_url(base_url: &str, model: &str, dimensions: usize) -> Self {
+    pub fn with_url(
+        base_url: &str,
+        model: &str,
+        dimensions: usize,
+    ) -> Result<Self, EmbeddingError> {
         let base = base_url.trim_end_matches('/');
-        Self {
-            client: reqwest::Client::builder()
-                .timeout(Duration::from_secs(120))
-                .build()
-                .expect("failed to build reqwest client"),
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(120))
+            .build()?;
+        Ok(Self {
+            client,
             endpoint: format!("{base}/v1/embeddings"),
             model: model.to_string(),
             expected_dimensions: dimensions,
             max_input_chars: DEFAULT_MAX_INPUT_CHARS,
-        }
+        })
     }
 
     /// Embed a single text string. Retries transient failures up to 3 times.
