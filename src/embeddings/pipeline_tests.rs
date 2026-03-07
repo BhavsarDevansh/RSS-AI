@@ -33,7 +33,7 @@ async fn embedding_generated_flag_updated() {
         .await
         .unwrap();
 
-    let client = EmbeddingClient::with_url(&server.url(), "test", 3);
+    let client = EmbeddingClient::with_url(&server.url(), "test", 3).unwrap();
     let result = process_pending_articles(&client, &pool, Some(10))
         .await
         .unwrap();

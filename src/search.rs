@@ -68,7 +68,7 @@ impl SearchIndex {
     }
 
     pub fn from_index(index: Index) -> Result<Self, SearchError> {
-        let fields = schema_fields(&index);
+        let fields = schema_fields(&index)?;
         let reader = index
             .reader_builder()
             .reload_policy(ReloadPolicy::OnCommitWithDelay)
@@ -255,18 +255,25 @@ pub fn open_or_create_index_at(path: &Path) -> Result<Index, SearchError> {
 }
 
 /// Get the schema fields from an existing index.
-pub fn schema_fields(index: &Index) -> SchemaFields {
+pub fn schema_fields(index: &Index) -> Result<SchemaFields, SearchError> {
     let schema = index.schema();
-    SchemaFields {
-        article_id: schema.get_field("article_id").unwrap(),
-        title: schema.get_field("title").unwrap(),
-        content: schema.get_field("content").unwrap(),
-        summary: schema.get_field("summary").unwrap(),
-        author: schema.get_field("author").unwrap(),
-        tags: schema.get_field("tags").unwrap(),
-        feed_title: schema.get_field("feed_title").unwrap(),
-        published_at: schema.get_field("published_at").unwrap(),
-    }
+    let field = |name: &str| -> Result<Field, SearchError> {
+        schema.get_field(name).map_err(|_| {
+            SearchError::Tantivy(tantivy::TantivyError::SchemaError(format!(
+                "missing field: {name}"
+            )))
+        })
+    };
+    Ok(SchemaFields {
+        article_id: field("article_id")?,
+        title: field("title")?,
+        content: field("content")?,
+        summary: field("summary")?,
+        author: field("author")?,
+        tags: field("tags")?,
+        feed_title: field("feed_title")?,
+        published_at: field("published_at")?,
+    })
 }
 
 /// Create a shared reader with reload-on-commit policy.
@@ -329,7 +336,7 @@ pub fn delete_article(
 
 /// Drop all documents and rebuild the index from the database.
 pub async fn rebuild_index(index: &Index, pool: &sqlx::SqlitePool) -> Result<usize, SearchError> {
-    let fields = schema_fields(index);
+    let fields = schema_fields(index)?;
     let mut writer = create_writer(index)?;
     writer.delete_all_documents()?;
     writer.commit()?;
@@ -407,7 +414,7 @@ pub fn search(
     query_str: &str,
     options: &SearchOptions,
 ) -> Result<Vec<SearchResult>, SearchError> {
-    let fields = schema_fields(index);
+    let fields = schema_fields(index)?;
     let default_fields = vec![fields.title, fields.content, fields.summary, fields.tags];
     search_inner(reader, index, fields, &default_fields, query_str, options)
 }
@@ -550,9 +557,11 @@ fn search_inner(
         }
     }
 
-    // Re-sort if date-based sorting requested
+    // Re-sort: by date if requested, otherwise by boosted score when recency boost is active
     if options.sort_by == SortBy::Date {
         results.sort_by(|a, b| b.published_at.cmp(&a.published_at));
+    } else if options.recency_boost {
+        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
     }
 
     Ok(results)
@@ -600,21 +609,26 @@ fn parse_to_tantivy_datetime(s: &str) -> Option<TantivyDateTime> {
 /// Generate a context snippet around the first matching query term.
 /// `terms` should be pre-lowercased and stripped of query syntax.
 fn generate_snippet(content: &str, terms: &[&str]) -> String {
-    // Only lowercase the first portion of content we need to scan — up to
-    // the first match + SNIPPET_MAX_LEN should be enough.  For very long
-    // articles this avoids lowercasing megabytes of text.
-    let scan_limit = content.len().min(SNIPPET_MAX_LEN * 10);
-    let scan_region = &content[..scan_limit];
-    let scan_lower = scan_region.to_lowercase();
+    let best_pos = if terms.is_empty() {
+        None
+    } else {
+        // Only lowercase the first portion of content we need to scan — up to
+        // the first match + SNIPPET_MAX_LEN should be enough.  For very long
+        // articles this avoids lowercasing megabytes of text.
+        let scan_limit = content.len().min(SNIPPET_MAX_LEN * 10);
+        let scan_region = &content[..scan_limit];
+        let scan_lower = scan_region.to_lowercase();
 
-    let mut best_pos = None;
-    for term in terms {
-        if let Some(pos) = scan_lower.find(term)
-            && (best_pos.is_none() || pos < best_pos.unwrap())
-        {
-            best_pos = Some(pos);
+        let mut pos = None;
+        for term in terms {
+            if let Some(p) = scan_lower.find(term)
+                && (pos.is_none() || p < pos.unwrap())
+            {
+                pos = Some(p);
+            }
         }
-    }
+        pos
+    };
 
     let start = best_pos.unwrap_or(0);
     let snippet_start = if start > 40 {
@@ -881,5 +895,241 @@ mod tests {
             .search("nonexistent query terms xyz", &SearchOptions::default())
             .unwrap();
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_search_with_offset_and_limit() {
+        let (si, mut writer, _dir) = test_index();
+        let fields = si.fields();
+        let tags = vec![];
+
+        // Index 5 articles all about "technology"
+        for i in 0..5 {
+            let title = format!("Technology Article {i}");
+            let content = format!("This article about technology number {i} discusses innovation");
+            let data = ArticleIndexData {
+                article_id: i + 1,
+                title: &title,
+                content: Some(&content),
+                summary: None,
+                author: None,
+                tags: &tags,
+                feed_title: Some("Blog"),
+                published_at: Some("2025-06-15T12:00:00+00:00"),
+            };
+            writer.delete_term(Term::from_field_u64(fields.article_id, (i + 1) as u64));
+            let doc = build_document(&fields, &data);
+            writer.add_document(doc).unwrap();
+        }
+        writer.commit().unwrap();
+        si.reader().reload().unwrap();
+
+        // Limit to 2
+        let options = SearchOptions {
+            limit: 2,
+            ..Default::default()
+        };
+        let results = si.search("technology", &options).unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Offset 2, limit 2 — should get next 2
+        let options = SearchOptions {
+            limit: 2,
+            offset: 2,
+            ..Default::default()
+        };
+        let results = si.search("technology", &options).unwrap();
+        assert_eq!(results.len(), 2);
+
+        // Offset past all results — empty
+        let options = SearchOptions {
+            limit: 10,
+            offset: 100,
+            ..Default::default()
+        };
+        let results = si.search("technology", &options).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_batch_indexing() {
+        let (si, mut writer, _dir) = test_index();
+        let fields = si.fields();
+        let tags = vec![];
+
+        let articles: Vec<ArticleIndexData<'_>> = (0..3)
+            .map(|i| ArticleIndexData {
+                article_id: i + 1,
+                title: "Batch Article",
+                content: Some("Content for batch indexing test"),
+                summary: None,
+                author: None,
+                tags: &tags,
+                feed_title: Some("Blog"),
+                published_at: Some("2025-06-15T12:00:00+00:00"),
+            })
+            .collect();
+
+        let count = index_articles_batch(&mut writer, &fields, &articles).unwrap();
+        assert_eq!(count, 3);
+        si.reader().reload().unwrap();
+
+        let results = si
+            .search("batch indexing", &SearchOptions::default())
+            .unwrap();
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_recency_boost() {
+        use chrono::Utc;
+
+        let (si, mut writer, _dir) = test_index();
+        let fields = si.fields();
+        let tags = vec![];
+
+        let old_date = "2020-01-01T12:00:00+00:00".to_string();
+        let new_date = Utc::now().format("%Y-%m-%dT%H:%M:%S+00:00").to_string();
+
+        let old = ArticleIndexData {
+            article_id: 1,
+            title: "Rust Article",
+            content: Some("This article discusses Rust programming language"),
+            summary: None,
+            author: None,
+            tags: &tags,
+            feed_title: Some("Blog"),
+            published_at: Some(&old_date),
+        };
+        index_article(&mut writer, &fields, &old).unwrap();
+
+        let new = ArticleIndexData {
+            article_id: 2,
+            title: "Rust Article",
+            content: Some("This article discusses Rust programming language"),
+            summary: None,
+            author: None,
+            tags: &tags,
+            feed_title: Some("Blog"),
+            published_at: Some(&new_date),
+        };
+        index_article(&mut writer, &fields, &new).unwrap();
+        si.reader().reload().unwrap();
+
+        let options = SearchOptions {
+            recency_boost: true,
+            ..Default::default()
+        };
+        let results = si.search("rust programming", &options).unwrap();
+        assert_eq!(results.len(), 2);
+        // Newer article should have higher score due to recency boost
+        assert_eq!(results[0].article_id, 2);
+    }
+
+    #[test]
+    fn test_feed_filter() {
+        let (si, mut writer, _dir) = test_index();
+        let fields = si.fields();
+        let tags = vec![];
+
+        let a1 = ArticleIndexData {
+            article_id: 1,
+            title: "Security Update",
+            content: Some("Critical security patches released"),
+            summary: None,
+            author: None,
+            tags: &tags,
+            feed_title: Some("Security Blog"),
+            published_at: Some("2025-06-15T12:00:00+00:00"),
+        };
+        index_article(&mut writer, &fields, &a1).unwrap();
+
+        let a2 = ArticleIndexData {
+            article_id: 2,
+            title: "Security News",
+            content: Some("Security vulnerability discovered"),
+            summary: None,
+            author: None,
+            tags: &tags,
+            feed_title: Some("Tech News"),
+            published_at: Some("2025-06-15T12:00:00+00:00"),
+        };
+        index_article(&mut writer, &fields, &a2).unwrap();
+        si.reader().reload().unwrap();
+
+        let options = SearchOptions {
+            feed_filter: Some(vec!["Security Blog".to_string()]),
+            ..Default::default()
+        };
+        let results = si.search("security", &options).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].feed_title, "Security Blog");
+    }
+
+    #[test]
+    fn test_snippet_generation_no_terms() {
+        let content = "This is some content for testing snippet generation with no matching terms.";
+        let snippet = generate_snippet(content, &[]);
+        assert!(!snippet.is_empty());
+        // Should return the beginning of the content
+        assert!(snippet.starts_with("This"));
+    }
+
+    #[test]
+    fn test_snippet_generation_empty_content() {
+        let snippet = generate_snippet("", &["term"]);
+        assert!(snippet.is_empty());
+    }
+
+    #[test]
+    fn test_parse_to_tantivy_datetime_formats() {
+        // RFC3339
+        assert!(parse_to_tantivy_datetime("2025-01-01T00:00:00+00:00").is_some());
+        // Naive datetime
+        assert!(parse_to_tantivy_datetime("2025-01-01 12:00:00").is_some());
+        // Date only
+        assert!(parse_to_tantivy_datetime("2025-01-01").is_some());
+        // Invalid
+        assert!(parse_to_tantivy_datetime("not a date").is_none());
+    }
+
+    #[test]
+    fn test_sort_by_date() {
+        let (si, mut writer, _dir) = test_index();
+        let fields = si.fields();
+        let tags = vec![];
+
+        for (i, date) in [
+            "2025-01-01T12:00:00+00:00",
+            "2025-06-01T12:00:00+00:00",
+            "2025-03-01T12:00:00+00:00",
+        ]
+        .iter()
+        .enumerate()
+        {
+            let title = format!("Article {i}");
+            let data = ArticleIndexData {
+                article_id: (i + 1) as i64,
+                title: &title,
+                content: Some("Technology news and updates"),
+                summary: None,
+                author: None,
+                tags: &tags,
+                feed_title: Some("Blog"),
+                published_at: Some(date),
+            };
+            index_article(&mut writer, &fields, &data).unwrap();
+        }
+        si.reader().reload().unwrap();
+
+        let options = SearchOptions {
+            sort_by: SortBy::Date,
+            ..Default::default()
+        };
+        let results = si.search("technology", &options).unwrap();
+        assert_eq!(results.len(), 3);
+        // Should be sorted by date descending
+        assert!(results[0].published_at >= results[1].published_at);
+        assert!(results[1].published_at >= results[2].published_at);
     }
 }
