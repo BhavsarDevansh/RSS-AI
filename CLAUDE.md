@@ -52,6 +52,21 @@ RSS-AI is an AI-powered RSS reader combining feed aggregation with semantic sear
   - `text.rs` — `prepare_article_text` (title+content concat with null-byte/control-char sanitisation), `prepare_input` (zero-copy `Cow<str>` truncation to ~8192 tokens)
   - `pipeline.rs` — `process_pending_articles` batch pipeline (default batch size 10), marks `embedding_generated` flag, returns `(article_id, Vec<f32>)` pairs for vector index storage
   - `{client,text,pipeline}_tests.rs` — tests for each concern, compiled only under `#[cfg(test)]`
+- **`vector/`** — HNSW-based vector similarity search (module directory):
+  - `mod.rs` — re-exports only
+  - `error.rs` — `VectorError` error type (wraps `Io`, `EmbeddingError`, `SearchError`)
+  - `types.rs` — `VectorSearchResult`, `HybridSearchResult`, `IndexState` (serde persistence)
+  - `index.rs` — `VectorIndex` struct: thread-safe (`RwLock`) HNSW index with tombstone-based deletion, auto-save, persistence (little-endian binary format), `rebuild()` for compaction
+  - `hybrid.rs` — `hybrid_search`: combines Tantivy keyword + HNSW semantic results via Reciprocal Rank Fusion (RRF, k=60)
+  - `{index,hybrid}_tests.rs` — tests for each concern
+
+### Modules not yet implemented (stubs / planned)
+
+- **`tagger`** — Auto-tagging articles using LLM
+- **`linker`** — Cross-linking related articles
+- **`query`** — Natural language query interface
+- **`mcp`** — MCP protocol server for tool integration
+- **`scheduler`** — Periodic feed polling
 
 ### Module organisation
 Each file should have exactly one distinct concern. When a module has multiple concerns (e.g. error type, data types, client logic, pipeline), split it into a directory module (`mod.rs` + subfiles). Follow the pattern used by `embeddings/`:
@@ -70,7 +85,12 @@ Files may be small — that is fine. Clarity and maintainability are more import
 - `sqlx` with embedded migrations (`sqlx::migrate!()`)
 - Structured logging via `tracing` with env-filter
 - `thiserror` for library errors, `anyhow` for application errors
-- Each module has its own error type (e.g. `DbError`, `FeedError`)
+- Each module has its own error type (e.g. `DbError`, `FeedError`, `VectorError`). Cross-module errors use `#[from]` conversions (e.g. `VectorError` wraps `EmbeddingError` and `SearchError`)
+
+### Concurrency & safety gotchas
+- **`VectorIndex`** uses `RwLock<InnerIndex>` — all public methods acquire the lock and return `Result` with `VectorError::LockPoisoned` on failure. Do not silently swallow poisoned locks.
+- **HNSW tombstone limitation:** HNSW does not support true node deletion. Removed vectors are tombstoned but their nodes remain in the graph. After many add/remove cycles, call `VectorIndex::rebuild()` to compact the index.
+- **Serialization format:** Embeddings are persisted in little-endian binary. Both read and write paths must use explicit `to_le_bytes()` / `from_le_bytes()` — never raw byte casts.
 
 ## Database
 
@@ -86,4 +106,6 @@ Feature branches follow `issue-N/description` pattern (e.g., `issue-3/database-l
 
 ## Versioning
 
-Uses Semantic Versioning. Every update should change the application version number in Cargo.toml and the user-agent string in `src/config.rs`.
+Uses Semantic Versioning. Every update must bump the version in **both** locations:
+1. `Cargo.toml` → `version = "X.Y.Z"`
+2. `src/config.rs` → `user_agent: "rss-ai/X.Y.Z".to_string()` (in `Default` impl, around line 113)

@@ -561,7 +561,11 @@ fn search_inner(
     if options.sort_by == SortBy::Date {
         results.sort_by(|a, b| b.published_at.cmp(&a.published_at));
     } else if options.recency_boost {
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
     }
 
     Ok(results)
